@@ -12,20 +12,37 @@ URL_LIBRERIA_TAREAS = "https://google.com"
 @st.cache_data(ttl=5)
 def cargar_datos_base():
     try:
-        df_j = pd.read_csv(URL_JUGADORES).rename(columns=lambda x: x.strip())
-        df_t = pd.read_csv(URL_LIBRERIA_TAREAS).rename(columns=lambda x: x.strip())
+        df_j = pd.read_csv(URL_JUGADORES)
+        df_j.columns = df_j.columns.str.strip()
     except:
-        df_j = pd.DataFrame()
+        df_j = pd.DataFrame(columns=['Nombre', 'Equipo', 'ID', 'Asistencias', 'Totales', 'Actitud_Promedio', 'Minutos_Jugados', 'Minutos_Totales'])
+        
+    try:
+        df_t = pd.read_csv(URL_LIBRERIA_TAREAS)
+        df_t.columns = df_t.columns.str.strip().str.upper() # Forzamos mayúsculas limpias en las columnas del Excel
+    except:
         df_t = pd.DataFrame(columns=['ETAPA', 'TIPO DE CONCEPTO', 'CONCEPTO GENERAL', 'CONCEPTO MICRO', 'TIPOS DE TAREAS', 'NOMBRE DE LA TAREA', 'LINK IMAGEN', 'LINK VIDEO TAREA', 'DESCRIPCION DE LA TAREA', 'NORMAS', 'TAREA NOMBRE VARIANTE', 'LINK VARIANTE TAREA'])
     return df_j, df_t
 
 df_jugadores, df_tareas_base = cargar_datos_base()
 
-# Memoria para nuevas tareas y unificación
-if "tareas_creadas_en_vivo" not in st.session_state:
-    st.session_state.tareas_creadas_en_vivo = pd.DataFrame()
+# Estructura limpia que usará la App obligatoriamente
+columnas_oficiales = ['ETAPA', 'TIPO DE CONCEPTO', 'CONCEPTO GENERAL', 'CONCEPTO MICRO', 'TIPOS DE TAREAS', 'NOMBRE DE LA TAREA', 'LINK IMAGEN', 'LINK VIDEO TAREA', 'DESCRIPCION DE LA TAREA', 'NORMAS', 'TAREA NOMBRE VARIANTE', 'LINK VARIANTE TAREA']
 
-df_total_tareas = pd.concat([df_tareas_base, st.session_state.tareas_creadas_en_vivo], ignore_index=True).drop_duplicates(subset=['NOMBRE DE LA TAREA'])
+# Asegurar que el dataframe base tenga las columnas necesarias
+for col in columnas_oficiales:
+    if col not in df_tareas_base.columns:
+        df_tareas_base[col] = None
+
+df_tareas_base = df_tareas_base[columnas_oficiales]
+
+# Memoria temporal para nuevas tareas creadas en la sesión
+if "tareas_creadas_en_vivo" not in st.session_state:
+    st.session_state.tareas_creadas_en_vivo = pd.DataFrame(columns=columnas_oficiales)
+
+# Unificación blindada contra KeyErrors
+df_total_tareas = pd.concat([df_tareas_base, st.session_state.tareas_creadas_en_vivo], ignore_index=True)
+df_total_tareas = df_total_tareas.dropna(subset=['NOMBRE DE LA TAREA']).drop_duplicates(subset=['NOMBRE DE LA TAREA'])
 
 # SELECTOR DE EQUIPO
 st.sidebar.header("🛡️ Acceso por Equipos")
@@ -34,6 +51,7 @@ if not df_jugadores.empty and "Equipo" in df_jugadores.columns:
     equipo_seleccionado = st.sidebar.selectbox("Selecciona la plantilla:", lista_equipos)
     df_filtrado_jugadores = df_jugadores[df_jugadores["Equipo"] == equipo_seleccionado]
 else:
+    equipo_seleccionado = "juvenil a"
     df_filtrado_jugadores = pd.DataFrame()
 
 st.markdown("---")
@@ -48,7 +66,7 @@ opcion_menu = st.radio(
 st.markdown("---")
 
 # ==========================================
-# OPCIÓN 1: CREAR TAREAS (CON LAS 12 OPCIONES DE LA IMAGEN)
+# OPCIÓN 1: CREAR TAREAS
 # ==========================================
 if opcion_menu == "Añadir Nuevas Tareas":
     st.subheader("🛠️ CREADOR DE TAREAS")
@@ -56,12 +74,18 @@ if opcion_menu == "Añadir Nuevas Tareas":
         col1, col2, col3 = st.columns(3)
         c_etapa = col1.selectbox("ETAPA", ["TODAS", "PREBENJAMÍN", "BENJAMÍN", "ALEVÍN", "INFANTIL", "CADETE", "JUVENIL"])
         c_tipo_concepto = col2.selectbox("TIPO DE CONCEPTO", ["TACTICOS", "TECNICOS", "FISICOS", "ACTITUDINALES"])
-        c_concepto_general = col3.text_input("CONCEPTO GENERAL")
+        c_concepto_general = col3.selectbox("CONCEPTO GENERAL", [
+            "TÁCTICOS MOMENTO SIN BALÓN",
+            "TÁCTICO MOMENTO CON BALÓN",
+            "TÉCNICOS CON BALÓN",
+            "FÍSICOS",
+            "TÁCTICOS MOMENTO TRANSICIONES",
+            "TÉCNICOS SIN BALÓN",
+            "ACTITUDINALES"
+        ])
         
         col4, col5, col6 = st.columns(3)
         c_concepto_micro = col4.text_input("CONCEPTO MICRO")
-        
-        # Opciones actualizadas letra por letra según la imagen:
         c_tipos_tareas = col5.selectbox("TIPOS DE TAREAS", [
             "COLECTIVA CONTEX",
             "PARTIDO CONDICIONADO(APLICACIONES)",
@@ -110,8 +134,13 @@ else:
     st.subheader("⏱️ DISEÑADOR DE SESIONES")
     with st.container(border=True):
         c_f1, c_f2, c_f3 = st.columns(3)
-        f_tipo = c_f1.selectbox("Filtrar TIPO DE CONCEPTO", sorted(df_total_tareas['TIPO DE CONCEPTO'].dropna().unique()) if not df_total_tareas.empty else ["TACTICOS"])
-        f_general = c_f2.selectbox("Filtrar CONCEPTO GENERAL", sorted(df_total_tareas['CONCEPTO GENERAL'].dropna().unique()) if not df_total_tareas.empty else [""])
+        
+        # Filtros dinámicos basados en lo que realmente tiene tu Excel cargado
+        opciones_tipo = sorted(df_total_tareas['TIPO DE CONCEPTO'].dropna().unique()) if not df_total_tareas.empty else ["TACTICOS"]
+        f_tipo = c_f1.selectbox("Filtrar TIPO DE CONCEPTO", opciones_tipo if len(opciones_tipo) > 0 else ["TACTICOS"])
+        
+        opciones_gen = sorted(df_total_tareas['CONCEPTO GENERAL'].dropna().unique()) if not df_total_tareas.empty else ["TÁCTICO MOMENTO CON BALÓN"]
+        f_general = c_f2.selectbox("Filtrar CONCEPTO GENERAL", opciones_gen if len(opciones_gen) > 0 else ["TÁCTICO MOMENTO CON BALÓN"])
         
         tareas_filtradas = df_total_tareas[
             (df_total_tareas['TIPO DE CONCEPTO'] == f_tipo) & 
@@ -137,13 +166,8 @@ else:
                 st.image(info_t['LINK IMAGEN'], caption="Imagen del ejercicio")
 
     st.markdown("---")
-    if not df_filtrado_jugadores.empty:
+    if not df_filtrado_jugadores.empty and "Nombre" in df_filtrado_jugadores.columns:
         st.subheader("👥 Convocatoria del Equipo")
         st.multiselect("Selecciona los jugadores convocados:", df_filtrado_jugadores["Nombre"].tolist(), default=df_filtrado_jugadores["Nombre"].tolist())
     
     st.info("💡 Recuerda que puedes exportar la planificación completa pulsando **Ctrl+P** / **Cmd+P** en tu teclado.")
-
-
-
-
-
