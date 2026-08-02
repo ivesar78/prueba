@@ -1,169 +1,162 @@
 import streamlit as st
 import pandas as pd
 
-# 1. PAGE CONFIGURATION
-st.set_page_config(page_title="Gestión Cantera Fútbol", layout="wide")
-st.title("⚽ Sistema Integral de Metodología y Meritocracia")
+# 1. ARCHITECTURE & GLOBAL SETTINGS
+st.set_page_config(page_title="Gestión Metodológica IGX", layout="wide")
+st.title("⚽ GESTIÓN METODOLÓGICA IGX")
 
-# EXCEL CONNECTIONS (REAL CSV EXPORTS FROM GOOGLE SHEETS)
+# DATABASES CONNECTIONS (REAL DATA FROM YOUR 3 GOOGLE SHEETS)
 URL_JUGADORES = "https://google.com"
-# Enlace que apunta a la pestaña de TAREAS del segundo documento
-URL_TAREAS = "https://google.com"
+URL_LIBRERIA_TAREAS = "https://google.com"
+URL_CRONOGRAMA_SESIONES = "https://google.com" # Hoja PLANTILLA SESION/PLAN
 
 @st.cache_data(ttl=5)
-def cargar_jugadores():
+def cargar_todo():
+    # Cargar Jugadores
     try:
-        df = pd.read_csv(URL_JUGADORES)
-        df.columns = df.columns.str.strip()
-        return df
+        df_j = pd.read_csv(URL_JUGADORES)
+        df_j.columns = df_j.columns.str.strip()
     except:
-        return pd.DataFrame([{"ID": 1, "Nombre": "prueba1", "Equipo": "juvenil a", "Asistencias": 18, "Totales": 20, "Actitud_Promedio": "4,5", "Minutos_Jugados": 730, "Minutos_Totales": 870}])
-
-@st.cache_data(ttl=5)
-def cargar_libreria_tareas():
+        df_j = pd.DataFrame([{"ID": 1, "Nombre": "prueba1", "Equipo": "juvenil a", "Asistencias": 18, "Totales": 20, "Actitud_Promedio": "4,5", "Minutos_Jugados": 730, "Minutos_Totales": 870}])
+    
+    # Cargar Biblioteca de Tareas
     try:
-        df = pd.read_csv(URL_TAREAS)
-        df.columns = df.columns.str.strip()
-        # Normalizamos nombres de columnas comunes según tu Excel de Tareas
-        df.rename(columns={'NOMBRE DE LA TAREA': 'Nombre', 'TIPOS DE TAREAS': 'Tipo', 'CONCEPTO GENERAL': 'Principio', 'CONCEPTO MICRO': 'Subprincipio', 'DESCRIPCION DE LA TAREA': 'Descripcion'}, inplace=True)
-        return df
+        df_t = pd.read_csv(URL_LIBRERIA_TAREAS)
+        df_t.columns = df_t.columns.str.strip()
+        df_t.rename(columns={
+            'NOMBRE DE LA TAREA': 'Nombre', 'TIPOS DE TAREAS': 'Tipo', 
+            'CONCEPTO GENERAL': 'Concepto_General', 'CONCEPTO MICRO': 'Concepto_Micro', 
+            'DESCRIPCION DE LA TAREA': 'Descripcion', 'ETAPA': 'Etapa', 'NORMAS': 'Normas'
+        }, inplace=True)
     except:
-        # Estructura por defecto si falla o está vacío el enlace
-        return pd.DataFrame(columns=['Nombre', 'Tipo', 'Principio', 'Subprincipio', 'Descripcion', 'Etapa', 'Normas'])
+        df_t = pd.DataFrame(columns=['Nombre', 'Tipo', 'Concepto_General', 'Concepto_Micro', 'Descripcion', 'Etapa', 'Normas'])
+        
+    return df_j, df_t
 
-# Inicializar estados de memoria local para almacenar nuevas tareas creadas en la sesión
-if "tareas_nuevas" not in st.session_state:
-    st.session_state.tareas_nuevas = pd.DataFrame(columns=['Nombre', 'Tipo', 'Principio', 'Subprincipio', 'Descripcion', 'Etapa', 'Normas'])
+df_jugadores, df_tareas_base = cargar_todo()
 
-df_jugadores = cargar_jugadores()
-df_tareas_base = cargar_libreria_tareas()
+# Inicialización de almacenamiento interno para tareas nuevas añadidas en vivo
+if "tareas_nuevas_igx" not in st.session_state:
+    st.session_state.tareas_nuevas_igx = pd.DataFrame(columns=['Nombre', 'Tipo', 'Concepto_General', 'Concepto_Micro', 'Descripcion', 'Etapa', 'Normas'])
 
-# Unimos las tareas del Excel con las que vayas creando en la App
-df_total_tareas = pd.concat([df_tareas_base, st.session_state.tareas_nuevas], ignore_index=True).drop_duplicates(subset=['Nombre']).dropna(subset=['Nombre'])
+# Fusión total de ejercicios de la librería
+df_total_tareas = pd.concat([df_tareas_base, st.session_state.tareas_nuevas_igx], ignore_index=True).drop_duplicates(subset=['Nombre']).dropna(subset=['Nombre'])
 
-# 2. SIDEBAR PANEL (TEAM SELECTOR)
-st.sidebar.header("⚙️ Panel de Control")
+# 2. SELECTOR DE EQUIPO (Eje transversal de la App)
+st.sidebar.header("🛡️ Acceso por Equipos")
 if "Equipo" in df_jugadores.columns:
     lista_equipos = sorted(df_jugadores["Equipo"].dropna().unique().tolist())
-    equipo_seleccionado = st.sidebar.selectbox("Selecciona Equipo", lista_equipos)
-    df_filtrado = df_jugadores[df_jugadores["Equipo"] == equipo_seleccionado].copy()
+    equipo_seleccionado = st.sidebar.selectbox("Selecciona la plantilla con la que vas a trabajar:", lista_equipos)
+    df_filtrado_jugadores = df_jugadores[df_jugadores["Equipo"] == equipo_seleccionado].copy()
 else:
     equipo_seleccionado = "juvenil a"
-    df_filtrado = df_jugadores.copy()
+    df_filtrado_jugadores = df_jugadores.copy()
 
-# 3. INTERACTIVE MODULE: ROLL CALL AND ATTITUDE
-st.header(f"📋 Control Diario de Entrenamiento - {equipo_seleccionado}")
-if not df_filtrado.empty and "Nombre" in df_filtrado.columns:
-    with st.form("asistencia_form"):
-        st.write("Registra la asistencia y comportamiento de la sesión de hoy:")
-        for idx, jugador in df_filtrado.iterrows():
-            col1, col2, col3 = st.columns(3)
-            col1.write(f"**{jugador['Nombre']}**")
-            col2.checkbox("Asistió", value=True, key=f"as_{jugador['ID']}")
-            col3.slider("Actitud en sesión", 1, 5, 5, key=f"ac_{jugador['ID']}")
-        
-        if st.form_submit_button("Registrar Sesión de Hoy"):
-            st.success("¡Asistencia registrada localmente!")
+# Pestañas de Navegación del Sistema IGX
+tab_asistencia, tab_crear_tarea, tab_crear_sesion = st.tabs([
+    "📋 Control de Plantilla e IMD", 
+    "➕ Creador de Tareas CDM", 
+    "⏱️ Diseñador de Sesiones Estructuradas"
+])
 
-# 4. NEW MODULE: CREAR NUEVAS TAREAS (IGX STYLE)
-st.header("➕ Creador de Nuevas Tareas (Añadir a la Biblioteca)")
-with st.expander("🛠️ Abrir Formulario para diseñar una Tarea Nueva"):
-    with st.form("crear_tarea_form"):
-        c1, c2, c3 = st.columns(3)
-        nt_nombre = c1.text_input("Nombre de la Tarea")
-        nt_tipo = c2.selectbox("Tipo de Tarea", ["COLECTIVA CONTEX", "ANALÍTICA", "RONDO", "SSG", "PARTIDO JUEGO"])
-        nt_etapa = c3.selectbox("Etapa Destinada", ["TODAS", "PREBENJAMÍN", "BENJAMÍN", "ALEVÍN", "INFANTIL", "CADETE", "JUVENIL"])
+# ==========================================
+# PESTAÑA 1: ASISTENCIA Y MERITOCRACIA
+# ==========================================
+with tab_asistencia:
+    st.subheader(f"Métricas de Plantilla: {equipo_seleccionado.upper()}")
+    if not df_filtrado_jugadores.empty and "Nombre" in df_filtrado_jugadores.columns:
+        with st.form("form_lista"):
+            for idx, jugador in df_filtrado_jugadores.iterrows():
+                c1, c2, c3 = st.columns(3)
+                c1.write(f"**{jugador['Nombre']}**")
+                c2.checkbox("Asistió", value=True, key=f"p1_as_{jugador['ID']}")
+                c3.slider("Actitud", 1, 5, 5, key=f"p1_ac_{jugador['ID']}")
+            if st.form_submit_button("💾 Guardar Entrenamiento Diario"):
+                st.success("Asistencia registrada")
+
+        # Algoritmo de Meritocracia
+        asistencias = pd.to_numeric(df_filtrado_jugadores.get("Asistencias", 0), errors='coerce').fillna(0)
+        totales = pd.to_numeric(df_filtrado_jugadores.get("Totales", 1), errors='coerce').fillna(1).replace(0, 1)
+        actitud = pd.to_numeric(df_filtrado_jugadores.get("Actitud_Promedio", "5").astype(str).str.replace(',', '.'), errors='coerce').fillna(5)
+        min_jugados = pd.to_numeric(df_filtrado_jugadores.get("Minutos_Jugados", 0), errors='coerce').fillna(0)
+        min_totales = pd.to_numeric(df_filtrado_jugadores.get("Minutos_Totales", 1), errors='coerce').fillna(1).replace(0, 1)
+
+        df_filtrado_jugadores["Asistencia_%"] = (asistencias / totales) * 100
+        df_filtrado_jugadores["IMD"] = (df_filtrado_jugadores["Asistencia_%"] * 0.4) + ((actitud / 5) * 100 * 0.6)
+        df_filtrado_jugadores["Minutos_%"] = (min_jugados / min_totales) * 100
+        st.dataframe(df_filtrado_jugadores[["Nombre", "Asistencia_%", "IMD", "Minutos_%"]], use_container_width=True)
+
+# ==========================================
+# PESTAÑA 2: CREADOR DE TAREAS CDM
+# ==========================================
+with tab_crear_tarea:
+    st.subheader("🛠️ Creador de Tareas CDM (Mapeo de Conceptos)")
+    with st.form("form_nueva_tarea_igx"):
+        col_a, col_b, col_c = st.columns(3)
+        nombre_t = col_a.text_input("NOMBRE DE LA TAREA", placeholder="Ej: Mantener amplitud 4x4")
+        tipo_t = col_b.selectbox("TIPO DE CONCEPTO", ["TECNICOS", "TÁCTICOS MOMENTO CON BALÓN", "TÁCTICOS MOMENTO SIN BALÓN", "TÁCTICOS MOMENTO TRANSICIONES", "ACTITUDINALES", "FÍSICOS"])
+        etapa_t = col_c.selectbox("ETAPA", ["TODAS", "PREBENJAMÍN", "BENJAMÍN", "ALEVÍN", "INFANTIL", "CADETE", "JUVENIL"])
         
-        c4, c5 = st.columns(2)
-        nt_principio = c4.text_input("Concepto General / Principio Táctico", "TÁCTICO MOMENTO CON BALÓN")
-        nt_subprincipio = c5.text_input("Concepto Micro / Subprincipio", "balón parado def")
+        col_d, col_e = st.columns(2)
+        concepto_gen = col_d.text_input("CONCEPTO GENERAL", value="TÁCTICO MOMENTO CON BALÓN")
+        concepto_mic = col_e.text_input("CONCEPTO MICRO (Subprincipio)", value="mantener")
         
-        nt_desc = st.text_area("Descripción de la Tarea")
-        nt_normas = st.text_area("Normas / Reglas de Provocación")
+        desc_t = st.text_area("DESCRIPCIÓN DE LA TAREA")
+        normas_t = st.text_area("NORMAS / REGLAS DE PROVOCACIÓN")
         
-        if st.form_submit_button("💾 Guardar y Añadir a la Biblioteca"):
-            if nt_nombre:
-                nueva_fila = pd.DataFrame([{
-                    'Nombre': nt_nombre, 'Tipo': nt_tipo, 'Principio': nt_principio, 
-                    'Subprincipio': nt_subprincipio, 'Descripcion': nt_desc, 'Etapa': nt_etapa, 'Normas': nt_normas
+        if st.form_submit_button("💾 Validar y Guardar en Biblioteca IGX"):
+            if nombre_t:
+                nueva_t_df = pd.DataFrame([{
+                    'Nombre': nombre_t, 'Tipo': tipo_t, 'Concepto_General': concepto_gen, 
+                    'Concepto_Micro': concepto_mic, 'Descripcion': desc_t, 'Etapa': etapa_t, 'Normas': normas_t
                 }])
-                st.session_state.tareas_nuevas = pd.concat([st.session_state.tareas_nuevas, nueva_fila], ignore_index=True)
-                st.success(f"¡Tarea '{nt_nombre}' guardada con éxito! Ya puedes elegirla en el diseñador de abajo.")
+                st.session_state.tareas_nuevas_igx = pd.concat([st.session_state.tareas_nuevas_igx, nueva_t_df], ignore_index=True)
+                st.success(f"Tarea '{nombre_t}' añadida con éxito.")
                 st.rerun()
             else:
-                st.error("El nombre de la tarea es obligatorio.")
+                st.error("Es obligatorio rellenar el Nombre de la Tarea.")
 
-# 5. METHODOLOGICAL DESIGNER: CHOOSE FROM LIBRERÍA
-st.header("📝 Diseñador Estructurado de Sesiones")
-st.write("Selecciona ejercicios de la biblioteca importada desde tu Excel o introduce nuevos datos:")
-
-lista_nombres_tareas = ["-- Introducir Tarea Manual / Personalizada --"] + sorted(df_total_tareas['Nombre'].dropna().tolist())
-
-with st.container(border=True):
-    st.subheader("Planificación de Tareas Principales")
-    tarea_elegida = st.selectbox("🎯 Buscar y Elegir Tarea de la Biblioteca de tu Excel", lista_nombres_tareas)
+# ==========================================
+# PESTAÑA 3: CREADOR DE SESIONES (ESTILO CRONOGRAMA)
+# ==========================================
+with tab_crear_sesion:
+    st.subheader("⏱️ Diseño Estructurado de Sesión de Entrenamiento")
     
-    # Auto-completado de campos si la tarea se selecciona de la librería
-    info_tarea = df_total_tareas[df_total_tareas['Nombre'] == tarea_elegida]
-    
-    col_t1, col_t2 = st.columns(2)
-    with col_t1:
-        v_tipo = info_tarea['Tipo'].values[0] if not info_tarea.empty and pd.notna(info_tarea['Tipo'].values[0]) else "COLECTIVA CONTEX"
-        tipo_tarea = st.text_input("Tipo de Tarea", value=str(v_tipo))
+    # Bloque 1: Filtros de Objetivo del Cronograma General
+    st.markdown("#### 📑 1. Criterios de Selección y Objetivos de la Sesión")
+    with st.container(border=True):
+        c_fil1, c_fil2, c_fil3 = st.columns(3)
+        f_tipo = c_fil1.selectbox("Filtrar por Tipo de Concepto", sorted(df_total_tareas['Tipo'].dropna().unique().tolist()) if not df_total_tareas.empty else ["TÁCTICO MOMENTO CON BALÓN"])
+        f_general = c_fil2.selectbox("Filtrar por Concepto General", sorted(df_total_tareas['Concepto_General'].dropna().unique().tolist()) if not df_total_tareas.empty else ["mantener"])
         
-        v_principio = info_tarea['Principio'].values[0] if not info_tarea.empty and pd.notna(info_tarea['Principio'].values[0]) else ""
-        principio = st.text_input("Principio Táctico a Trabajar", value=str(v_principio))
-    with col_t2:
-        v_sub = info_tarea['Subprincipio'].values[0] if not info_tarea.empty and pd.notna(info_tarea['Subprincipio'].values[0]) else ""
-        subprincipio = st.text_input("Subprincipio Táctico", value=str(v_sub))
+        # Filtrado inteligente de ejercicios disponibles según criterios del Excel
+        tareas_filtradas_db = df_total_tareas[
+            (df_total_tareas['Tipo'] == f_tipo) & 
+            (df_total_tareas['Concepto_General'] == f_general)
+        ]
         
-        espacio = st.selectbox("Espacio del Campo Utilizado", ["Vestuario", "Cuadrante Reducido", "1/4 de Campo", "Medio Campo", "Campo Completo"])
+        lista_final_ejercicios = sorted(tareas_filtradas_db['Nombre'].tolist()) if not tareas_filtradas_db.empty else sorted(df_total_tareas['Nombre'].tolist())
+        tarea_seleccionada_sesion = c_fil3.selectbox("🎯 Tarea resultante que coincide:", ["-- Selecciona un ejercicio compatible --"] + lista_final_ejercicios)
 
-    st.markdown("---")
-    v_desc = info_tarea['Descripcion'].values[0] if not info_tarea.empty and pd.notna(info_tarea['Descripcion'].values[0]) else ""
+    # Bloque 2: Las 5 Partes de la Sesión (Estructura Solicitada)
+    st.markdown("#### 📋 2. Planificación de las 5 Partes de la Sesión")
     
-    col_b1, col_b2 = st.columns(2)
-    with col_b1:
-        st.text_area("Bloque 1: Vestuario Inicial (Charlas / Video)", "Charlas de cohesión de grupo táctico.", height=80)
-        st.text_area("Bloque 2: Calentamiento Técnico/Físico", "Rondo estructural dinámico.", height=80)
-        st.text_area("Bloque 3: Tarea Principal 1", value=f"Ejercicio Seleccionado: {tarea_elegida}\nDescripción: {v_desc}", height=80)
-    with col_b2:
-        st.text_area("Bloque 4: Tarea Principal 2", "Situación real orientada al partido.", height=80)
-        st.text_area("Bloque 5: Tarea Principal 3", "Evolución condicionada final.", height=80)
-        st.text_area("Bloque 6: Vuelta a la Calma (Vestuario / Ducha)", "Estiramientos dirigidos, higiene y ducha obligatorio.", height=80)
+    # Extraemos información del ejercicio seleccionado de tu biblioteca
+    info_ejercicio = df_total_tareas[df_total_tareas['Nombre'] == tarea_seleccionada_sesion]
+    detalles_ejercicio = info_ejercicio['Descripcion'].values[0] if not info_ejercicio.empty else ""
+    normas_ejercicio = info_ejercicio['Normas'].values[0] if not info_ejercicio.empty else ""
+    micro_ejercicio = info_ejercicio['Concepto_Micro'].values[0] if not info_ejercicio.empty else ""
 
-# 6. ALGORITHM: MERITOCRACY INDEX (IMD) VS MINUTES
-st.header("📊 Índice de Meritocracia Deportiva vs Minutos")
-if not df_filtrado.empty and "Nombre" in df_filtrado.columns:
-    asistencias = pd.to_numeric(df_filtrado.get("Asistencias", 0), errors='coerce').fillna(0)
-    totales = pd.to_numeric(df_filtrado.get("Totales", 1), errors='coerce').fillna(1).replace(0, 1)
-    actitud = pd.to_numeric(df_filtrado.get("Actitud_Promedio", "5").astype(str).str.replace(',', '.'), errors='coerce').fillna(5)
-    min_jugados = pd.to_numeric(df_filtrado.get("Minutos_Jugados", 0), errors='coerce').fillna(0)
-    min_totales = pd.to_numeric(df_filtrado.get("Minutos_Totales", 1), errors='coerce').fillna(1).replace(0, 1)
+    col_izq, col_der = st.columns(2)
+    with col_izq:
+        s_b1 = st.text_area("Parte 1: Vestuario Inicial (Charlas tácticas / Análisis de Video / Dinámicas grupales)", value="Análisis de vídeo del rival de la jornada, repaso de posicionamientos específicos en pizarra y dinámicas grupales de cohesión.", height=110)
+        s_b2 = st.text_area("Parte 2: Calentamiento (Activación física / Juegos Cooperativos)", value=f"Concepto Micro: {micro_ejercicio}\nRondo estructural o circuito técnico adaptado.", height=110)
+        s_b3 = st.text_area("Parte 3: Tarea Principal Seleccionada (Biblioteca Excel)", value=f"Ejercicio: {tarea_seleccionada_sesion}\n\nDescripción: {detalles_ejercicio}\n\nNormas: {normas_ejercicio}", height=180)
+    with col_der:
+        s_b4 = st.text_area("Parte 4: Tarea Secundaria / Evolución del Ejercicio", value="Evolución o variante táctica modificando el espacio de juego o el número de toques permitidos.", height=110)
+        s_b5 = st.text_area("Parte 5: Vuelta a la Calma (Vestuario / Higiene / Ducha)", value="Estiramientos estáticos dirigidos en el césped, feedback individualizado del míster, higiene y ducha obligatoria en el vestuario.", height=110)
+        s_espacio = st.selectbox("Modificar Espacio Ocupado de la Tarea Principal", ["Vestuario", "Cuadrante Reducido", "1/4 Campo", "Medio Campo (Área a Área)", "Campo Completo"])
 
-    df_filtrado["Asistencia_%"] = (asistencias / totales) * 100
-    df_filtrado["IMD"] = (df_filtrado["Asistencia_%"] * 0.4) + ((actitud / 5) * 100 * 0.6)
-    df_filtrado["Minutos_%"] = (min_jugados / min_totales) * 100
-    
-    for index, row in df_filtrado.iterrows():
-        if row["IMD"] >= 85 and row["minutos_%"] < 50:
-            st.warning(f"⚠️ **Alerta de Injusticia**: {row['Nombre']} tiene un IMD excelente ({row['IMD']:.1f}%) pero juega menos de lo entrenado.")
-        if row["IMD"] < 65 and row["minutos_%"] >= 75:
-            st.error(f"🚨 **Alerta de Privilegio**: {row['Nombre']} entrena poco o rinde bajo en actitud ({row['IMD']:.1f}%) pero juega el máximo de minutos.")
 
-    st.dataframe(df_filtrado[["Nombre", "Asistencia_%", "IMD", "Minutos_%"]], use_container_width=True)
-
-# 7. MATCH CONVOCATIONS FOR WHATSAPP
-st.header("📱 Generador de Convocatorias")
-if not df_filtrado.empty and "Nombre" in df_filtrado.columns:
-    jugadores_convocados = st.multiselect("Selecciona los Convocados para el Partido", df_filtrado["Nombre"].tolist(), default=df_filtrado["Nombre"].tolist())
-    rival = st.text_input("Rival de la Jornada", "C.F. Rival Cantera")
-    hora = st.text_input("Hora de la Cita en Vestuarios", "10:15 H")
-
-    texto_whatsapp = f"⚽ *CONVOCATORIA OFICIAL: {equipo_seleccionado.upper()}* ⚽\n\n🗓️ *Rival:* {rival}\n🕒 *Hora Cita:* {hora}\n\n*Convocados:*\n"
-    for i, j in enumerate(jugadores_convocados, 1):
-        texto_whatsapp += f"{i}. {j}\n"
-    texto_whatsapp += "\n⚠️ _Por favor, confirmad asistencia respondiendo a este mensaje. ¡Vamos equipo!_"
-    st.text_area("Copia este texto listo para enviar por WhatsApp:", texto_whatsapp, height=150)
 
 
