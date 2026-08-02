@@ -19,28 +19,24 @@ def cargar_datos_base():
         
     try:
         df_t = pd.read_csv(URL_LIBRERIA_TAREAS)
-        df_t.columns = df_t.columns.str.strip().str.upper() # Forzamos mayúsculas limpias en las columnas del Excel
+        df_t.columns = df_t.columns.str.strip().str.upper()
     except:
         df_t = pd.DataFrame(columns=['ETAPA', 'TIPO DE CONCEPTO', 'CONCEPTO GENERAL', 'CONCEPTO MICRO', 'TIPOS DE TAREAS', 'NOMBRE DE LA TAREA', 'LINK IMAGEN', 'LINK VIDEO TAREA', 'DESCRIPCION DE LA TAREA', 'NORMAS', 'TAREA NOMBRE VARIANTE', 'LINK VARIANTE TAREA'])
     return df_j, df_t
 
 df_jugadores, df_tareas_base = cargar_datos_base()
 
-# Estructura limpia que usará la App obligatoriamente
 columnas_oficiales = ['ETAPA', 'TIPO DE CONCEPTO', 'CONCEPTO GENERAL', 'CONCEPTO MICRO', 'TIPOS DE TAREAS', 'NOMBRE DE LA TAREA', 'LINK IMAGEN', 'LINK VIDEO TAREA', 'DESCRIPCION DE LA TAREA', 'NORMAS', 'TAREA NOMBRE VARIANTE', 'LINK VARIANTE TAREA']
 
-# Asegurar que el dataframe base tenga las columnas necesarias
 for col in columnas_oficiales:
     if col not in df_tareas_base.columns:
         df_tareas_base[col] = None
 
 df_tareas_base = df_tareas_base[columnas_oficiales]
 
-# Memoria temporal para nuevas tareas creadas en la sesión
 if "tareas_creadas_en_vivo" not in st.session_state:
     st.session_state.tareas_creadas_en_vivo = pd.DataFrame(columns=columnas_oficiales)
 
-# Unificación blindada contra KeyErrors
 df_total_tareas = pd.concat([df_tareas_base, st.session_state.tareas_creadas_en_vivo], ignore_index=True)
 df_total_tareas = df_total_tareas.dropna(subset=['NOMBRE DE LA TAREA']).drop_duplicates(subset=['NOMBRE DE LA TAREA'])
 
@@ -56,7 +52,6 @@ else:
 
 st.markdown("---")
 
-# 2. SELECCIÓN DE OPCIÓN PRINCIPAL
 opcion_menu = st.radio(
     "👉 **SELECCIONA UNA OPCIÓN:**", 
     ["Añadir Nuevas Tareas", "Diseñar una Nueva Sesión"],
@@ -66,7 +61,7 @@ opcion_menu = st.radio(
 st.markdown("---")
 
 # ==========================================
-# OPCIÓN 1: CREAR TAREAS
+# OPCIÓN 1: CREAR TAREAS (SIN MODIFICACIONES)
 # ==========================================
 if opcion_menu == "Añadir Nuevas Tareas":
     st.subheader("🛠️ CREADOR DE TAREAS")
@@ -128,46 +123,67 @@ if opcion_menu == "Añadir Nuevas Tareas":
                 st.error("Por favor, introduce el NOMBRE DE LA TAREA.")
 
 # ==========================================
-# OPCIÓN 2: CREAR SESIÓN
+# OPCIÓN 2: CREAR SESIÓN (NUEVO DISEÑO GALDAKAO)
 # ==========================================
 else:
-    st.subheader("⏱️ DISEÑADOR DE SESIONES")
+    st.subheader("📋 DISEÑADOR DE SESIONES - ESTILO GALDAKAO")
+    
+    # --- BLOQUE superior: DATOS DE LA SESIÓN ---
+    st.markdown("### 🗓️ DATOS DE LA SESIÓN")
     with st.container(border=True):
-        c_f1, c_f2, c_f3 = st.columns(3)
-        
-        # Filtros dinámicos basados en lo que realmente tiene tu Excel cargado
-        opciones_tipo = sorted(df_total_tareas['TIPO DE CONCEPTO'].dropna().unique()) if not df_total_tareas.empty else ["TACTICOS"]
-        f_tipo = c_f1.selectbox("Filtrar TIPO DE CONCEPTO", opciones_tipo if len(opciones_tipo) > 0 else ["TACTICOS"])
-        
-        opciones_gen = sorted(df_total_tareas['CONCEPTO GENERAL'].dropna().unique()) if not df_total_tareas.empty else ["TÁCTICO MOMENTO CON BALÓN"]
-        f_general = c_f2.selectbox("Filtrar CONCEPTO GENERAL", opciones_gen if len(opciones_gen) > 0 else ["TÁCTICO MOMENTO CON BALÓN"])
-        
-        tareas_filtradas = df_total_tareas[
-            (df_total_tareas['TIPO DE CONCEPTO'] == f_tipo) & 
-            (df_total_tareas['CONCEPTO GENERAL'] == f_general)
-        ]
-        
-        lista_nombres = tareas_filtradas['NOMBRE DE LA TAREA'].dropna().tolist() if not tareas_filtradas.empty else []
-        tarea_seleccionada = c_f3.selectbox("🎯 NOMBRE DE LA TAREA DISPONIBLE:", ["-- Selecciona --"] + lista_nombres)
-
-    if tarea_seleccionada != "-- Selecciona --":
-        info_t = df_total_tareas[df_total_tareas['NOMBRE DE LA TAREA'] == tarea_seleccionada].iloc[0]
-        
-        st.markdown(f"### 📋 {info_t['NOMBRE DE LA TAREA']}")
-        col_det1, col_det2 = st.columns(2)
-        with col_det1:
-            st.write(f"**Etapa:** {info_t['ETAPA']}")
-            st.write(f"**Tipo de Tarea:** {info_t['TIPOS DE TAREAS']}")
-            st.write(f"**Concepto Micro:** {info_t['CONCEPTO MICRO']}")
-            st.write(f"**Descripción:** {info_t['DESCRIPCION DE LA TAREA']}")
-        with col_det2:
-            st.write(f"**Normas:** {info_t['NORMAS']}")
-            if pd.notna(info_t['LINK IMAGEN']) and str(info_t['LINK IMAGEN']).startswith("http"):
-                st.image(info_t['LINK IMAGEN'], caption="Imagen del ejercicio")
+        col_ds1, col_ds2, col_ds3, col_ds4, col_ds5 = st.columns(5)
+        ds_club = col_ds1.text_input("CLUB / EQUIPO", value="GALDAKAO")
+        ds_fecha = col_ds2.text_input("FECHA", value="24 mar 2026")
+        ds_meso = col_ds3.text_input("MESOCICLO", value="MARZO")
+        ds_etapa = col_ds4.selectbox("ETAPA SESIÓN", ["TODAS", "PREBENJAMÍN", "BENJAMÍN", "ALEVÍN", "INFANTIL", "CADETE", "JUVENIL"], index=0)
+        ds_num = col_ds5.text_input("Nº SESION", value="21")
 
     st.markdown("---")
-    if not df_filtrado_jugadores.empty and "Nombre" in df_filtrado_jugadores.columns:
-        st.subheader("👥 Convocatoria del Equipo")
-        st.multiselect("Selecciona los jugadores convocados:", df_filtrado_jugadores["Nombre"].tolist(), default=df_filtrado_jugadores["Nombre"].tolist())
     
-    st.info("💡 Recuerda que puedes exportar la planificación completa pulsando **Ctrl+P** / **Cmd+P** en tu teclado.")
+    # --- Estructura principal en dos grandes columnas (Estructura espejo del Excel) ---
+    col_izquierda_metodologia, col_derecha_jugadores = st.columns([3, 1])
+    
+    with col_izquierda_metodologia:
+        st.markdown("### 🧠 PARTE DE LA SESIÓN Y METODOLOGÍA")
+        
+        # Fila superior metodológica
+        with st.container(border=True):
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            s_parte = col_m1.selectbox("PARTE DE LA SESIÓN", ["CALENTAMIENTO", "PARTE PRINCIPAL 1", "PARTE PRINCIPAL 2", "PARTE PRINCIPAL 3", "VUELTA A LA CALMA"])
+            
+            opciones_gen = sorted(df_total_tareas['CONCEPTO GENERAL'].dropna().unique()) if not df_total_tareas.empty else ["TÁCTICO MOMENTO CON BALÓN"]
+            s_general = col_m2.selectbox("CONCEPTO GENERAL", opciones_gen if len(opciones_gen) > 0 else ["TÁCTICO MOMENTO CON BALÓN"])
+            
+            # Filtrado reactivo para rellenar micro y tipo de tarea según la base de datos
+            tareas_filtradas_prev = df_total_tareas[df_total_tareas['CONCEPTO GENERAL'] == s_general]
+            
+            opciones_micro = sorted(tareas_filtradas_prev['CONCEPTO MICRO'].dropna().unique()) if not tareas_filtradas_prev.empty else ["pase"]
+            s_micro = col_m3.selectbox("CONCEPTO MICRO", opciones_micro if len(opciones_micro) > 0 else ["pase"])
+            
+            opciones_tipo_t = sorted(tareas_filtradas_prev['TIPOS DE TAREAS'].dropna().unique()) if not tareas_filtradas_prev.empty else ["TECNIFICACION PASILLOS"]
+            s_tipo_tarea = col_m4.selectbox("TIPO DE TAREA", opciones_tipo_t if len(opciones_tipo_t) > 0 else ["TECNIFICACION PASILLOS"])
+
+        # Fila de Aspectos a Incidir e Información Complementaria
+        col_inc1, col_inc2 = st.columns([3, 1])
+        with col_inc1:
+            st.text_input("ASPECTOS A INCIDIR", value="Velocidad en la circulación de balón y perfiles de recepción.")
+        with col_inc2:
+            st.text_input("MATERIAL NECESARIO", value="Conos, Petos, Balones")
+
+        st.markdown("---")
+        
+        # Selección y carga del ejercicio
+        tareas_finales = df_total_tareas[
+            (df_total_tareas['CONCEPTO GENERAL'] == s_general) & 
+            (df_total_tareas['CONCEPTO MICRO'] == s_micro) & 
+            (df_total_tareas['TIPOS DE TAREAS'] == s_tipo_tarea)
+        ]
+        lista_nombres_disponibles = tareas_finales['NOMBRE DE LA TAREA'].dropna().tolist() if not tareas_finales.empty else sorted(df_total_tareas['NOMBRE DE LA TAREA'].dropna().tolist())
+        
+        s_tarea_seleccionada = st.selectbox("🎯 NOMBRE TAREA (Biblioteca):", ["-- Selecciona un ejercicio --"] + lista_nombres_disponibles)
+        
+        info_ejercicio_actual = df_total_tareas[df_total_tareas['NOMBRE DE LA TAREA'] == s_tarea_seleccionada]
+        
+        link_i = str(info_ejercicio_actual['LINK IMAGEN'].values[0]) if not info_ejercicio_actual.empty and pd.notna(info_ejercicio_actual['LINK IMAGEN'].values[0]) else ""
+        link_v = str(info_ejercicio_actual['LINK VIDEO TAREA'].values[0]) if not info_ejercicio_actual.empty and pd.notna(info_ejercicio_actual['LINK VIDEO TAREA'].values[0]) else ""
+        desc_t = str(info_ejercicio_actual['DESCRIPCION DE LA TAREA'].values[0]) if not info_ejercicio_actual.empty and pd.notna(info_ejercicio_actual['DESCRIPCION DE LA TAREA'].values[0]) else "Selecciona una tarea de la lista para mostrar su descripción."
